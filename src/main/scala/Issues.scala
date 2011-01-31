@@ -44,7 +44,7 @@ trait Issues {
 
   def issue[T](num: Long)(fn:  Option[Issue] => T) =
     Http(github / "show" / ghUser / ghRepo / num.toString ># { js =>
-      fn(onIssue(js).headOption)
+      fn(oneIssue(js).headOption)
     })
 
   def issues[T](fn: List[Issue] => T) =
@@ -52,19 +52,19 @@ trait Issues {
       fn(manyIssues(js))
     })
 
-  def closedIssues[T](f: Any => T) =
+  def closedIssues[T](f: List[Issue] => T) =
     Http(github / "list" / ghUser / ghRepo / "closed" ># { js =>
-      f(js)
+      f(manyIssues(js))
     })
 
-  def searchOpen[T](term: String)(f: Any => T) =
+  def searchOpen[T](term: String)(f: List[Issue] => T) =
     Http(github / "search" / ghUser / ghRepo / "closed" / URLEncoder.encode(term, "utf-8") ># { js =>
-      f(js)
+      f(manyIssues(js))
     })
 
-  def searchClosed[T](term: String)(f: Any => T) =
+  def searchClosed[T](term: String)(f: List[Issue] => T) =
     Http(github / "search" / ghUser / ghRepo / "closed" / URLEncoder.encode(term, "utf-8") ># { js =>
-      f(js)
+      f(manyIssues(js))
     })
 
   def openIssue[T](title: String, body: String)(f: Any => T) = {
@@ -102,7 +102,7 @@ trait Issues {
     })
   }
 
-    def oneIssue(js: JValue) =
+  def oneIssue(js: JValue) =
     for {
       f <- Issues.one(js)
       grav <- Issues.gravatar(f)
