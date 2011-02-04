@@ -71,7 +71,7 @@ trait Issues extends sbt.Project with IssuesApi {
       } }
       None
     }
-  } } describedAs("Search for gh issues by terms")
+  } } describedAs("Search for open gh issues by terms")
 
   lazy val ghSearchClosedIssues = task { _ match {
     case Array() => task { Some("usage: gh-search-closed-issues 'terms to search for'") }
@@ -84,7 +84,7 @@ trait Issues extends sbt.Project with IssuesApi {
       } }
       None
     }
-  } } describedAs("Search for gh issues by terms")
+  } } describedAs("Search for closed gh issues by terms")
 
   lazy val ghOpen = task { _ match {
     case Array(title, desc) =>
