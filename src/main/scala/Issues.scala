@@ -18,6 +18,7 @@ object Issues {
   val state = 'state ? str
   val createdAt = 'created_at ? str
   val closedAt = 'closed_at ? str
+  val labels = 'labels ? ary
 }
 
 object Labels {
@@ -28,7 +29,7 @@ object Labels {
 
 case class Issue(user: String, gravatar: String, updatedAt: String, votes: BigInt, number: BigInt,
                position: Double, title: String, body: String, state: String,
-               createdAt: String)
+               createdAt: String, labels: List[String])
 
 /** convenience tuple producer. uses an external .gh file to store credentials */
 object LocalGhCreds {
@@ -67,7 +68,7 @@ trait LabelTasks extends sbt.Project with IssuesApi {
         None
       }
     } catch { case _ => task {  Some("invalid arguments label: %s, num: %s" format(label, num)) } }
-    case _ => task { Some("usage: gh-add-label <label> <num>") }
+    case _ => task { Some("""usage: gh-add-label "<label>" <num>""") }
   } } describedAs("Adds a label to a gh issue")
 
   lazy val ghRemoveLabel = task { _ match {
@@ -101,8 +102,9 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         state    <- Issues.state(f)
         user     <- Issues.user(f)
         number   <- Issues.number(f)
+        labels   <- Some((for(JString(label) <- Issues.labels(f)) yield label): List[String])
       } yield {
-        Issue(user, grav, updated, votes, number, position, title, body, state, created)
+        Issue(user, grav, updated, votes, number, position, title, body, state, created, labels)
       }).headOption
     } catch { case dispatch.StatusCode(c, _) => None }
 
@@ -121,15 +123,16 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         state    <- Issues.state(f)
         user     <- Issues.user(f)
         number   <- Issues.number(f)
+        labels   <- Some((for(JString(label) <- Issues.labels(f)) yield label): List[String])
       } yield {
-        Issue(user, grav, updated, votes, number, position, title, body, state, created)
+        Issue(user, grav, updated, votes, number, position, title, body, state, created, labels)
       } } catch { case dispatch.StatusCode(c,_) => Nil }
 
   lazy val ghIssue = task {
     _ match {
       case Array(num) => issue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("%s %s (@%s)\n%s" format(is.number, is.title, is.user, is.body))
+          println("%s %s (@%s) %s\n%s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]"), is.body))
           None
         }
         case _ => task { Some("Github knows no issue %s" format num) }
@@ -143,7 +146,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
       case Nil => println("This project has no issues (at least no documented issues)")
       case l =>
         println("open issues")
-        for(is <- l) println("%s %s (@%s)" format(is.number, is.user, is.title))
+        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
     } }
     None
   } describedAs("Lists open github issues")
@@ -153,7 +156,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
       case Nil => println("This project has no closed issues.")
       case l =>
         println("closed issues")
-        for(is <- l) println("%s %s (@%s)" format(is.number, is.title, is.user))
+        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
     } }
     None
   } describedAs("List closed github issues")
@@ -165,7 +168,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         case Nil => println("no open issues with the terms %s" format terms.mkString(" "))
         case l =>
           println("%s search results" format l.size)
-          for(is <- l) println("%s %s (@%s)" format(is.number, is.title, is.user))
+          for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
       } }
       None
     }
@@ -178,7 +181,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         case Nil => println("no closed issues with the terms %s" format terms.mkString(" "))
         case l =>
           println("%s search results" format l.size)
-        for(is <- l) println("%s %s (@%s)" format(is.number, is.title, is.user))
+        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
       } }
       None
     }
@@ -188,19 +191,19 @@ trait IssueTasks extends sbt.Project with IssuesApi {
     case Array(title, desc) =>
       openIssue(title, desc) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("created issue %s %s (@%s)" format(is.number, is.title, is.user))
+          println("created issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
           None
         }
         case _ => task { Some("error creating issue") }
       } }
-    case _ => task { Some("usage: gh-open '<title>' '<description>'") }
+    case _ => task { Some("""usage: gh-open "<title>" "<description>" """) }
   } } describedAs("Open gh issue")
 
   lazy val ghClose = task { _ match {
     case Array(num) =>
       closeIssue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("closed issue %s %s (@%s)" format(is.number, is.title, is.user))
+          println("closed issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
           None
         }
         case _ => task { Some("error creating issue") }
