@@ -20,16 +20,115 @@ object Issues {
   val closedAt = 'closed_at ? str
 }
 
+object Labels {
+  import dispatch.liftjson.Js._
+  import net.liftweb.json.JsonAST._
+  def many(js: JValue) = for(JArray(value) <- js \ "labels"; JString(label) <- value) yield label
+}
+
 case class Issue(user: String, gravatar: String, updatedAt: String, votes: BigInt, number: BigInt,
                position: Double, title: String, body: String, state: String,
                createdAt: String)
 
-trait Issues extends sbt.Project with IssuesApi {
+/** convenience tuple producer. uses an external .gh file to store credentials */
+object LocalGhCreds {
+  import sbt._
+  def apply(log: Logger) =
+    try {
+      val p = new java.util.Properties()
+      FileUtilities.readStream((Path.userHome / ".gh").asFile, log) { stm =>
+        p.load(stm)
+        None
+      }
+      (p.getProperty("username"), p.getProperty("password"))
+    } catch { case _ => error("missing file %s" format (Path.userHome / ".gh")) }
+}
+
+trait LabelTasks extends sbt.Project with IssuesApi {
+  import net.liftweb.json.JsonAST._
+  import java.lang.{String => JString}
+  implicit def manyLabels[JString](js: JValue): List[String] =
+    for(l <- Labels.many(js)) yield l.toString //?
+
+  lazy val ghLabels = task {
+    labels {
+      (_: List[String]).foreach(println)
+    }
+    None
+  }
+
+  lazy val ghAddLabel = task { _ match {
+    case Array(label, num) => try {
+      task {
+        println("Labels")
+        addLabel(label, num.toLong) {
+          (_: List[String]).foreach(println)
+        }
+        None
+      }
+    } catch { case _ => task {  Some("invalid arguments label: %s, num: %s" format(label, num)) } }
+    case _ => task { Some("usage: gh-add-label <label> <num>") }
+  } } describedAs("Adds a label to a gh issue")
+
+  lazy val ghRemoveLabel = task { _ match {
+    case Array(label, num) => try {
+      task {
+        removeLabel(label, num.toLong) {
+          (_: List[String]).foreach(println)
+        }
+        None
+      }
+    } catch { case _ => task {  Some("invalid arguments label: %s, num:%s" format(label, num)) } }
+    case _ => task { Some("usage: gh-remove-label <label> <num>") }
+  } } describedAs("Removes a label from a gh issue")
+
+}
+
+trait IssueTasks extends sbt.Project with IssuesApi {
+  import net.liftweb.json.JsonAST._
+
+  implicit def one[Issue](js: JValue) =
+    try {
+      (for {
+        f        <- Issues.one(js)
+        grav     <- Issues.gravatar(f)
+        position <- Issues.position(f)
+        votes    <- Issues.votes(f)
+        created  <- Issues.createdAt(f)
+        body     <- Issues.body(f)
+        title    <- Issues.title(f)
+        updated  <- Issues.updatedAt(f)
+        state    <- Issues.state(f)
+        user     <- Issues.user(f)
+        number   <- Issues.number(f)
+      } yield {
+        Issue(user, grav, updated, votes, number, position, title, body, state, created)
+      }).headOption
+    } catch { case dispatch.StatusCode(c, _) => None }
+
+  implicit def many[Issue](js: JValue) =
+    try {
+      for {
+        is       <- Issues.many(js)
+        f        <- is
+        grav     <- Issues.gravatar(f)
+        position <- Issues.position(f)
+        votes    <- Issues.votes(f)
+        created  <- Issues.createdAt(f)
+        body     <- Issues.body(f)
+        title    <- Issues.title(f)
+        updated  <- Issues.updatedAt(f)
+        state    <- Issues.state(f)
+        user     <- Issues.user(f)
+        number   <- Issues.number(f)
+      } yield {
+        Issue(user, grav, updated, votes, number, position, title, body, state, created)
+      } } catch { case dispatch.StatusCode(c,_) => Nil }
 
   lazy val ghIssue = task {
     _ match {
-      case Array(num) => issue(num.toLong) { _ match {
-        case Some(is) => task {
+      case Array(num) => issue(num.toLong) { (_: Option[Issue]) match {
+        case Some(is) => {
           println("%s %s (@%s)\n%s" format(is.number, is.title, is.user, is.body))
           None
         }
@@ -40,8 +139,8 @@ trait Issues extends sbt.Project with IssuesApi {
   } describedAs("Shows a github issue by number")
 
   lazy val ghIssues = task {
-    issues { _ match {
-      case Nil => println("This project has no issues. At least no documented issues")
+    issues { (_: List[Issue]) match {
+      case Nil => println("This project has no issues (at least no documented issues)")
       case l =>
         println("open issues")
         for(is <- l) println("%s %s (@%s)" format(is.number, is.user, is.title))
@@ -50,7 +149,7 @@ trait Issues extends sbt.Project with IssuesApi {
   } describedAs("Lists open github issues")
 
   lazy val ghClosedIssues = task {
-     closedIssues { _ match {
+    closedIssues { (_: List[Issue]) match {
       case Nil => println("This project has no closed issues.")
       case l =>
         println("closed issues")
@@ -59,11 +158,10 @@ trait Issues extends sbt.Project with IssuesApi {
     None
   } describedAs("List closed github issues")
 
-
   lazy val ghSearchOpenIssues = task { _ match {
     case Array() => task { Some("usage: gh-search-open-issues 'terms to search for'") }
     case terms => task {
-      searchOpen(terms.mkString(" ")) { _ match {
+      searchOpen(terms.mkString(" ")) { (_: List[Issue]) match {
         case Nil => println("no open issues with the terms %s" format terms.mkString(" "))
         case l =>
           println("%s search results" format l.size)
@@ -76,11 +174,11 @@ trait Issues extends sbt.Project with IssuesApi {
   lazy val ghSearchClosedIssues = task { _ match {
     case Array() => task { Some("usage: gh-search-closed-issues 'terms to search for'") }
     case terms => task {
-      searchClosed(terms.mkString(" ")) { _ match {
+      searchClosed(terms.mkString(" ")) { (_: List[Issue]) match {
         case Nil => println("no closed issues with the terms %s" format terms.mkString(" "))
         case l =>
           println("%s search results" format l.size)
-          for(is <- l) println("%s %s (@%s)" format(is.number, is.title, is.user))
+        for(is <- l) println("%s %s (@%s)" format(is.number, is.title, is.user))
       } }
       None
     }
@@ -88,7 +186,7 @@ trait Issues extends sbt.Project with IssuesApi {
 
   lazy val ghOpen = task { _ match {
     case Array(title, desc) =>
-      openIssue(title, desc) { _ match {
+      openIssue(title, desc) { (_: Option[Issue]) match {
         case Some(is) => task {
           println("created issue %s %s (@%s)" format(is.number, is.title, is.user))
           None
@@ -98,10 +196,9 @@ trait Issues extends sbt.Project with IssuesApi {
     case _ => task { Some("usage: gh-open '<title>' '<description>'") }
   } } describedAs("Open gh issue")
 
-
- lazy val ghClose = task { _ match {
+  lazy val ghClose = task { _ match {
     case Array(num) =>
-      closeIssue(num.toLong) { _ match {
+      closeIssue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
           println("closed issue %s %s (@%s)" format(is.number, is.title, is.user))
           None
@@ -110,8 +207,10 @@ trait Issues extends sbt.Project with IssuesApi {
       } }
     case _ => task { Some("usage: gh-close <num>") }
   } } describedAs("Close gh issue")
-
 }
+
+/** Mixin for github.com issue tracking and labeling */
+trait Issues extends IssueTasks with LabelTasks
 
 private [gh] trait IssuesApi {
   import dispatch._
@@ -121,7 +220,17 @@ private [gh] trait IssuesApi {
   import net.liftweb.json.JsonAST._
   import java.net.URLEncoder
 
+  type One[A] = JValue => Option[A]
+  type Many[A] = JValue => List[A]
+
   private [gh] val github = :/("github.com") / "api" / "v2" / "json" / "issues"
+
+  private [gh] val http = new Http {
+    /** quiet dispatch request logging */
+    override def make_logger = new Logger {
+      def info(msg: String, items: Any*) = ()
+    }
+  }
 
   /** (username, reponame) */
   def ghRepository: (String, String)
@@ -135,99 +244,63 @@ private [gh] trait IssuesApi {
 
   lazy val auth = ghCredentials
 
-  def issue[T](num: Long)(fn:  Option[Issue] => T) =
-    Http(github / "show" / ghUser / ghRepo / num.toString ># { js =>
-      fn(oneIssue(js))
+  def issue[A, B](num: Long)(f: Option[A] => B)(implicit one: One[A]) =
+    http(github / "show" / ghUser / ghRepo / num.toString ># { js =>
+      f(one(js))
     })
 
-  def issues[T](fn: List[Issue] => T) =
-    Http(github / "list" / ghUser / ghRepo / "open" ># { js =>
-      fn(manyIssues(js))
+  def issues[A, B](f: List[A] => B)(implicit many: Many[A]) =
+    http(github / "list" / ghUser / ghRepo / "open" ># { js =>
+      f(many(js))
     })
 
-  def closedIssues[T](f: List[Issue] => T) =
-    Http(github / "list" / ghUser / ghRepo / "closed" ># { js =>
-      f(manyIssues(js))
+  def closedIssues[A, B](f: List[A] => B)(implicit many: Many[A]) =
+    http(github / "list" / ghUser / ghRepo / "closed" ># { js =>
+      f(many(js))
     })
 
-  def searchOpen[T](term: String)(f: List[Issue] => T) =
-    Http(github / "search" / ghUser / ghRepo / "open" / URLEncoder.encode(term, "utf-8") ># { js =>
-      f(manyIssues(js))
+  def searchOpen[A, B](term: String)(f: List[A] => B)(implicit many: Many[A]) =
+    http(github / "search" / ghUser / ghRepo / "open" / URLEncoder.encode(term, "utf-8") ># { js =>
+      f(many(js))
     })
 
-  def searchClosed[T](term: String)(f: List[Issue] => T) =
-    Http(github / "search" / ghUser / ghRepo / "closed" / URLEncoder.encode(term, "utf-8") ># { js =>
-      f(manyIssues(js))
+  def searchClosed[A, B](term: String)(f: List[A] => B)(implicit many: Many[A]) =
+    http(github / "search" / ghUser / ghRepo / "closed" / URLEncoder.encode(term, "utf-8") ># { js =>
+      f(many(js))
     })
 
-  def openIssue[T](title: String, body: String)(f: Option[Issue] => T) = {
+  def openIssue[A, B](title: String, body: String)(f: Option[A] => B)(implicit one: One[A]) = {
     val (user, pass) = auth
-    Http(github.POST.as_!(user, pass) / "open" / ghUser / ghRepo << Map(
+    http(github.POST.as_!(user, pass) / "open" / ghUser / ghRepo << Map(
       "title" -> title, "body" -> body
     ) ># { js =>
-      f(oneIssue(js))
+      f(one(js))
     })
   }
 
-  def closeIssue[T](num: Long)(f: Option[Issue] => T) = {
+  def closeIssue[A, B](num: Long)(f: Option[A] => B)(implicit one: One[A]) = {
     val (user, pass) = auth
-    Http(github.POST.as_!(user, pass) / "close" / ghUser / ghRepo / num.toString ># { js =>
-      f(oneIssue(js))
+    http(github.POST.as_!(user, pass) / "close" / ghUser / ghRepo / num.toString ># { js =>
+      f(one(js))
     })
   }
 
-  def labels[T](f: Any => T) =
-    Http(github / "labels" / ghUser / ghRepo ># { js =>
-      f(js)
-    })
+  def labels[A, B](f: List[A] => B)(implicit many: Many[A]) =
+    http(github / "labels" / ghUser / ghRepo ># { js =>
+      f(many(js))
+     })
 
-  def addLabel[T](label: String, num: Long)(f: Any => T) = {
+  def addLabel[A, B](label: String, num: Long)(f: List[A] => B)(implicit many: Many[A]) = {
     val (user, pass) = auth
-    Http(github.POST.as_!(user, pass) / "label" / "add" / ghUser / ghRepo / label / num.toString ># { js =>
-      f(js)
+    http(github.POST.as_!(user, pass) / "label" / "add" / ghUser / ghRepo / label / num.toString ># { js =>
+      f(many(js))
     })
   }
 
-  def removeLabel[T](label: String, num: Long)(f: Any => T) = {
+  def removeLabel[A, B](label: String, num: Long)(f: List[A] => B)(implicit many: Many[A]) = {
     val (user, pass) = auth
-    Http(github.POST.as_!(user, pass) / "label" / "remove" / ghUser / ghRepo / label / num.toString ># { js =>
-      f(js)
+    http(github.POST.as_!(user, pass) / "label" / "remove" / ghUser / ghRepo / label / num.toString ># { js =>
+      f(many(js))
     })
   }
-
-  def oneIssue(js: JValue): Option[Issue] = try {
-    (for {
-      f <- Issues.one(js)
-      grav <- Issues.gravatar(f)
-      position <- Issues.position(f)
-      votes    <- Issues.votes(f)
-      created  <- Issues.createdAt(f)
-      body     <- Issues.body(f)
-      title    <- Issues.title(f)
-      updated  <- Issues.updatedAt(f)
-      state    <- Issues.state(f)
-      user     <- Issues.user(f)
-      number   <- Issues.number(f)
-      } yield {
-        Issue(user, grav, updated, votes, number, position, title, body, state, created)
-      }).headOption
-  } catch { case dispatch.StatusCode(c,_) => None }
-
- def manyIssues(js: JValue): List[Issue] = try {
-   for {
-     is <- Issues.many(js)
-     f <- is
-     grav <- Issues.gravatar(f)
-     position <- Issues.position(f)
-     votes    <- Issues.votes(f)
-     created  <- Issues.createdAt(f)
-     body     <- Issues.body(f)
-     title    <- Issues.title(f)
-     updated  <- Issues.updatedAt(f)
-     state    <- Issues.state(f)
-     user     <- Issues.user(f)
-     number   <- Issues.number(f)
-   } yield {
-     Issue(user, grav, updated, votes, number, position, title, body, state, created)
-   } } catch { case dispatch.StatusCode(c,_) => Nil }
 }
