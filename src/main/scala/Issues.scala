@@ -128,7 +128,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
   lazy val ghIssue = task {
     _ match {
       case Array(num) => issue(num.toLong) { (_: Option[Issue]) match {
-        case Some(is) => {
+        case Some(is) => task {
           println("%s %s (@%s)\n%s" format(is.number, is.title, is.user, is.body))
           None
         }
