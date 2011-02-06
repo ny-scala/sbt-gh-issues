@@ -4,7 +4,7 @@ object Issues {
   import dispatch.liftjson.Js._
   import net.liftweb.json.JsonAST._
 
-  def many(js: JValue) = for(JArray(issue) <- js \ "issues") yield issue //'issues ? ary
+  def many(js: JValue) = for(JArray(issue) <- js \ "issues") yield issue
   def one(js: JValue) = for (JField("issue", field) <- js) yield field
 
   val user = 'user ? str
@@ -24,16 +24,35 @@ object Issues {
 object Labels {
   import dispatch.liftjson.Js._
   import net.liftweb.json.JsonAST._
+
   def many(js: JValue) = for(JArray(value) <- js \ "labels"; JString(label) <- value) yield label
+}
+
+object Comments {
+  import dispatch.liftjson.Js._
+  import net.liftweb.json.JsonAST._
+
+  def many(js: JValue) = for(JArray(comment) <- js \ "comments") yield comment
+  def one(js: JValue) = for (JField("comment", field) <- js) yield field
+
+  val gravatar = 'gravatar_id ? str
+  val createdAt = 'created_at ? str
+  val body = 'body ? str
+  val updatedAt = 'updated_at ? str
+  val id = 'id ? int
+  val user = 'user ? str
 }
 
 case class Issue(user: String, gravatar: String, updatedAt: String, votes: BigInt, number: BigInt,
                position: Double, title: String, body: String, state: String,
                createdAt: String, labels: List[String])
 
+case class Comment(id: BigInt, user: String, gravatar: String, body: String, createdAt: String, updatedAt: String)
+
 /** convenience tuple producer. uses an external .gh file to store credentials */
 object LocalGhCreds {
   import sbt._
+
   def apply(log: Logger) =
     try {
       val p = new java.util.Properties()
@@ -47,8 +66,9 @@ object LocalGhCreds {
 
 trait LabelTasks extends sbt.Project with IssuesApi {
   import net.liftweb.json.JsonAST._
+
   import java.lang.{String => JString}
-  implicit def manyLabels[JString](js: JValue): List[String] =
+  implicit def manyLabels[JString](js: JValue) =
     for(l <- Labels.many(js)) yield l.toString //?
 
   lazy val ghLabels = task {
@@ -128,8 +148,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         Issue(user, grav, updated, votes, number, position, title, body, state, created, labels)
       } } catch { case dispatch.StatusCode(c,_) => Nil }
 
-  lazy val ghIssue = task {
-    _ match {
+  lazy val ghIssue = task { _ match {
       case Array(num) => issue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
           println("%s %s (@%s) %s\n%s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]"), is.body))
@@ -145,8 +164,8 @@ trait IssueTasks extends sbt.Project with IssuesApi {
     issues { (_: List[Issue]) match {
       case Nil => println("This project has no issues (at least no documented issues)")
       case l =>
-        println("open issues")
-        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
+        println("Open issues")
+      for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
     } }
     None
   } describedAs("Lists open github issues")
@@ -155,8 +174,8 @@ trait IssueTasks extends sbt.Project with IssuesApi {
     closedIssues { (_: List[Issue]) match {
       case Nil => println("This project has no closed issues.")
       case l =>
-        println("closed issues")
-        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
+        println("Closed issues")
+      for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
     } }
     None
   } describedAs("List closed github issues")
@@ -168,7 +187,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
         case Nil => println("no open issues with the terms %s" format terms.mkString(" "))
         case l =>
           println("%s search results" format l.size)
-          for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
+        for(is <- l) println("%s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[",", ","]")))
       } }
       None
     }
@@ -191,7 +210,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
     case Array(title, desc) =>
       openIssue(title, desc) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("created issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
+          println("Created issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
           None
         }
         case _ => task { Some("error creating issue") }
@@ -203,7 +222,7 @@ trait IssueTasks extends sbt.Project with IssuesApi {
     case Array(num) =>
       closeIssue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("closed issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
+          println("Closed issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
           None
         }
         case _ => task { Some("error creating issue") }
@@ -212,8 +231,69 @@ trait IssueTasks extends sbt.Project with IssuesApi {
   } } describedAs("Close gh issue")
 }
 
+trait CommentTasks extends sbt.Project with IssuesApi {
+  import net.liftweb.json.JsonAST._
+
+  implicit def oneComment[Issue](js: JValue) =
+    try {
+      (for {
+        f        <- Comments.one(js)
+        id        <- Comments.id(f)
+        user      <- Comments.user(f)
+        gravatar  <- Comments.gravatar(f)
+        body      <- Comments.body(f)
+        createdAt <- Comments.createdAt(f)
+        updatedAt <- Comments.updatedAt(f)
+      } yield {
+        Comment(id, user, gravatar, body, createdAt, updatedAt)
+      }).headOption
+    } catch { case dispatch.StatusCode(c, _) => None }
+
+  implicit def manyComments[Comment](js: JValue) =
+   try {
+     for {
+       c         <- Comments.many(js)
+       f         <- c
+       id        <- Comments.id(f)
+       user      <- Comments.user(f)
+       gravatar  <- Comments.gravatar(f)
+       body      <- Comments.body(f)
+       createdAt <- Comments.createdAt(f)
+       updatedAt <- Comments.updatedAt(f)
+     } yield {
+       Comment(id, user, gravatar, body, createdAt, updatedAt)
+     }
+   } catch { case dispatch.StatusCode(c, _) => Nil }
+
+  lazy val ghComments = task { _ match {
+    case Array() => task { Some("usage: gh-comments <num>") }
+    case Array(num) => try {
+      task {
+        println("Comments on issue %s" format num)
+        comments(num.toLong) { (_: List[Comment]) match {
+          case Nil => println("There were no comments on this issue")
+          case l => for (c <-l) println("@%s @ %s\n\t%s" format(c.user, c.createdAt, c.body))
+        } }
+        None
+      } } catch { case _ => task { Some("invalid arguments %s" format num) } }
+  } } describedAs("Lists comments an a gh issue")
+
+  lazy val ghComment = task { _ match {
+    case Array() => task { Some("""usage: gh-comment <num> ""comment"" """) }
+    case Array(num, comm) => try {
+      task {
+        comment(num.toLong, comm) { (_: Option[Comment]) match {
+          case Some(c) => println("Posted comment as @%s @ %s\n\t%s" format(c.user, c.createdAt, c.body))
+          case _ => println("comment not posted")
+        } }
+        None
+      } } catch { case _ => task { Some("invalid arguments %s %s" format(num, comm)) } }
+  } } describedAs("Posts a comment on a gh issue")
+
+}
+
 /** Mixin for github.com issue tracking and labeling */
-trait Issues extends IssueTasks with LabelTasks
+trait Issues extends IssueTasks with LabelTasks with CommentTasks
 
 private [gh] trait IssuesApi {
   import dispatch._
@@ -291,7 +371,7 @@ private [gh] trait IssuesApi {
   def labels[A, B](f: List[A] => B)(implicit many: Many[A]) =
     http(github / "labels" / ghUser / ghRepo ># { js =>
       f(many(js))
-     })
+    })
 
   def addLabel[A, B](label: String, num: Long)(f: List[A] => B)(implicit many: Many[A]) = {
     val (user, pass) = auth
@@ -304,6 +384,20 @@ private [gh] trait IssuesApi {
     val (user, pass) = auth
     http(github.POST.as_!(user, pass) / "label" / "remove" / ghUser / ghRepo / label / num.toString ># { js =>
       f(many(js))
+    })
+  }
+
+  def comments[A, B](num: Long)(f: List[A] => B)(implicit many: Many[A]) =
+    http(github  / "comments" / ghUser / ghRepo / num.toString ># { js =>
+      f(many(js))
+    })
+
+  def comment[A, B](id: Long, comment: String)(f: Option[A] => B)(implicit one: One[A]) = {
+    val (user, pass) = auth
+    http(github.POST.as_!(user, pass) / "comment" / ghUser / ghRepo / id.toString << Map(
+      "comment" -> comment
+    ) ># { js =>
+      f(one(js))
     })
   }
 }
