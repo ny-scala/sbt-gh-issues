@@ -57,35 +57,35 @@ trait LabelTasks extends sbt.Project with IssuesApi with ColorizedLogging {
 
   lazy val ghLabels = task {
     labels {
+      println("Labels for %s/%s" format(ghUser, ghRepo))
       (_: List[String]).foreach(labelListing)
     }
     None
-  }
+  } describedAs("Lists Labels associated with Github repo %s/%s" format(ghUser, ghRepo))
 
   lazy val ghAddLabel = task { _ match {
     case Array(label, num) => try {
       task {
-        println("Labels")
-        addLabel(label, num.toLong) {
-          (_: List[String]).foreach(labelListing)
+        addLabel(label, num.toLong) { labels: List[String] =>
+          println("""Added label "%s" to Issue %s""" format(label, num))
         }
         None
       }
     } catch { case _ => task {  Some("invalid arguments label: %s, num: %s" format(label, num)) } }
     case _ => task { Some("""usage: gh-add-label "<label>" <num>""") }
-  } } describedAs("Adds a label to a gh issue")
+  } } describedAs("Adds a Label to a Github Issue")
 
   lazy val ghRemoveLabel = task { _ match {
     case Array(label, num) => try {
       task {
-        removeLabel(label, num.toLong) {
-          (_: List[String]).foreach(labelListing)
+        removeLabel(label, num.toLong) { labels: List[String] =>
+          println("""Removed label "%s" from Issue %s""" format(label, num))
         }
         None
       }
     } catch { case _ => task {  Some("invalid arguments label: %s, num:%s" format(label, num)) } }
     case _ => task { Some("usage: gh-remove-label <label> <num>") }
-  } } describedAs("Removes a label from a gh issue")
+  } } describedAs("Removes a Label from a gh issue")
 
 }
 
@@ -136,16 +136,13 @@ trait IssueTasks extends sbt.Project with IssuesApi with ColorizedLogging {
       case Array(num) => issue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
           issueDetail(is)
-          comments(is.number.longValue) {
-            println
-          }
           None
         }
         case _ => task { Some("This project has no issue %s" format num) }
       } }
       case _ => task { Some("usage: gh-issue <num>") }
     }
-  } describedAs("Shows a github issue by number")
+  } describedAs("Shows a Github Issue by number")
 
   lazy val ghIssues = task {
     issues { (_: List[Issue]) match {
@@ -165,7 +162,7 @@ trait IssueTasks extends sbt.Project with IssuesApi with ColorizedLogging {
         for(is <- l) issueListing(is)
     } }
     None
-  } describedAs("List closed github issues")
+  } describedAs("Lists closed Github Issues")
 
   lazy val ghSearchOpenIssues = task { _ match {
     case Array() => task { Some("usage: gh-search-open-issues 'terms to search for'") }
@@ -178,7 +175,7 @@ trait IssueTasks extends sbt.Project with IssuesApi with ColorizedLogging {
       } }
       None
     }
-  } } describedAs("Search for open gh issues by terms")
+  } } describedAs("Search for open Github Issues by terms")
 
   lazy val ghSearchClosedIssues = task { _ match {
     case Array() => task { Some("usage: gh-search-closed-issues 'terms to search for'") }
@@ -191,7 +188,7 @@ trait IssueTasks extends sbt.Project with IssuesApi with ColorizedLogging {
       } }
       None
     }
-  } } describedAs("Search for closed gh issues by terms")
+  } } describedAs("Search for closed Github Issues by terms")
 
   lazy val ghOpen = task { _ match {
     case Array(title, desc) =>
@@ -203,19 +200,19 @@ trait IssueTasks extends sbt.Project with IssuesApi with ColorizedLogging {
         case _ => task { Some("error creating issue") }
       } }
     case _ => task { Some("""usage: gh-open "<title>" "<description>" """) }
-  } } describedAs("Open gh issue")
+  } } describedAs("Opens a new Github Issue")
 
   lazy val ghClose = task { _ match {
     case Array(num) =>
       closeIssue(num.toLong) { (_: Option[Issue]) match {
         case Some(is) => task {
-          println("Closed issue %s %s (@%s) %s" format(is.number, is.title, is.user, is.labels.mkString("[", ", ", "]")))
+          println("""Closed issue %s "%s" as @%s""" format(is.number, is.title, is.user))
           None
         }
         case _ => task { Some("error creating issue") }
       } }
     case _ => task { Some("usage: gh-close <num>") }
-  } } describedAs("Close gh issue")
+  } } describedAs("Closes a Github Issue")
 }
 
 trait CommentTasks extends sbt.Project with IssuesApi with ColorizedLogging {
@@ -263,19 +260,19 @@ trait CommentTasks extends sbt.Project with IssuesApi with ColorizedLogging {
         } }
         None
       } } catch { case _ => task { Some("invalid arguments %s" format num) } }
-  } } describedAs("Lists comments on a gh issue")
+  } } describedAs("Lists Comments on a Github Issue")
 
   lazy val ghComment = task { _ match {
     case Array() => task { Some("""usage: gh-comment <num> ""comment"" """) }
     case Array(num, comm) => try {
       task {
         comment(num.toLong, comm) { (_: Option[Comment]) match {
-          case Some(c) => println("Posted comment %s on issue %s as @%s " format(c.body, num, c.user))
-          case _ => println("comment not posted")
+          case Some(c) => println("""Posted comment "%s" on issue %s as @%s""" format(c.body, num, c.user))
+          case _ => println("Comment not posted")
         } }
         None
       } } catch { case _ => task { Some("invalid arguments %s %s" format(num, comm)) } }
-  } } describedAs("Posts a comment on a gh issue")
+  } } describedAs("Posts a new Comment on a Github Issue")
 
 }
 
