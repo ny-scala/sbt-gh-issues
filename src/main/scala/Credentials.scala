@@ -1,6 +1,6 @@
 package gh
 
-/** convenience tuple producer for (<gh-user>, gh-password).
+/** convenience tuple producer for (<gh-user>, <gh-password>).
  *  uses an external .gh file located in user home dir to store credentials */
 object LocalGhCreds {
   import sbt._

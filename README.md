@@ -1,10 +1,10 @@
 # sbt gh issues
 
-[sbt]() plugin for [github](http://github.com) [issues](http://develop.github.com/p/issues.html)
+plugin for [github](http://github.com) [issues](http://develop.github.com/p/issues.html) for those `wired in` to [sbt](http://code.google.com/p/simple-build-tool/)
 
 ## usage
 
-This plugin actions several Github Issues related tasks to your project.
+This plugin adds several Github Issues related tasks to your project.
 
 These tasks are broken down into three traits
 
@@ -29,7 +29,9 @@ These tasks are broken down into three traits
      gh-comments <num> # lists all comments on a gh issue
      gh-comment <num> <comment> # adds a comment on a gh issue
 
-You for simplicity you can can just mix in `gh.Issues` for all three.
+You for simplicity you can can just mix in `gh.Issues` (includes all three) into your project definition.
+
+Declare the gh issues plugin in your `PluginDefinition`/
 
     > cat project/plugins/plugins.scala
     import sbt._
@@ -38,6 +40,8 @@ You for simplicity you can can just mix in `gh.Issues` for all three.
       val lessis = "less is repo" at "http://repo.lessis.me"
       val ghIssues = "me.lessis" % "gh-sbt-plugin" % "0.0.1"
     }
+
+The only dependency this plugin requires is a Github user to authenticate as an a Github repository to point at
 
     > cat project/build/project.scala
     import sbt._
@@ -48,7 +52,7 @@ You for simplicity you can can just mix in `gh.Issues` for all three.
     }
 
 Obviously, you will not want to check in your github username and password with your source code and push that to github :). To supply
-the `ghCredentials` tuple. You can use the `LocalGhCreds` function which assumes you have a externally defined `.gh`
+the `ghCredentials` tuple. You can use the `LocalGhCreds` function which assumes you have an externally defined `.gh`
 file containing your github username and password. This should follow the standard java properties file format
 
     > cat path/to/home/.gh
